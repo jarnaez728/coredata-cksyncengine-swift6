@@ -117,7 +117,7 @@ class AppInitialization: ObservableObject {
             logDebug("[SYNC] Usuarios: Local \(localUsers) - iCloud \(cloudUsers)")
             logDebug("[SYNC] SwimTimes: Local \(localSwimTimes) - iCloud \(cloudSwimTimes)")            
         } catch {
-            logDebug("[SYNC][ERROR] Error comparando local/iCloud: \(error)")
+            logDebug("[SYNC][ERROR] Error comparing local/iCloud: \(error)")
         }
     }
 
