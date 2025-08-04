@@ -88,11 +88,12 @@ You can adapt or rename these folders/files as needed to better reflect actual c
 
 1. Clone the repository and open the workspace in Xcode.
 2. Enter your CloudKit container identifier in the project entitlements or config file.
-3. In Xcode target → Signing & Capabilities:
+3. Update the same identifier in `SyncEngine.swift` by changing the variable `static let identifier = "youridentifierhere"` to match your CloudKit container.
+4. In Xcode target → Signing & Capabilities:
    * Enable **iCloud** with **CloudKit**.
    * Allow **Push Notification** (silent push operates CloudKit sync).
-4. Build and launch on a real device (or a signed-in simulator) with iCloud enabled.
-5. Observe logging or UI to evaluate sync behavior.
+5. Build and run the app on a real device (recommended) or on a simulator signed in to an iCloud account. The app will work in the simulator, but real devices tend to provide a more reliable CloudKit sync experience.
+6. Observe the logs, CloudKit console or UI to evaluate sync behavior.
 
 ---
 
