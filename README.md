@@ -13,10 +13,6 @@ A Swift 6 sample project demonstrating **Core Data + CKSyncEngine** integratio
   * Swift 6-related compiler warnings still unresolved.
   * Updates sometimes aren’t properly synced to CloudKit.
 
-* **Community outreach**:
-  * StackOverflow question is **coming soon** – link will be added here when live.
-  * Apple Support case is open for further assistance.
-
 ---
 
 ## 🧩 Technologies Used
@@ -102,27 +98,6 @@ You can adapt or rename these folders/files as needed to better reflect actual c
 * Run the app and use the UI or "generate random" button to seed data.
 * Add or edit entities and inspect whether they sync to CloudKit and across devices.
 * The app logs sync actions (e.g. Save / delete record batches). Watch for warnings or failures related to threading or record updates.
-
----
-
-## 🆘 Community Input Requested
-
-Looking for feedback on:
-
-* Resolving Core Data context threading crashes under Swift 6 concurrency model.
-* Eliminating Swift 6 compiler warnings.
-* Ensuring reliable update operations (avoiding client oplock errors).
-
----
-
-## 📝 Contribution Guidelines
-
-Please feel free to:
-
-* Submit pull requests to solve current bugs.
-* Add or refactor Swift 6 migration fixes.
-* Improve architecture, error handling, or documentation flow.
-* Suggest or implement improved sync strategies.
 
 ---
 
