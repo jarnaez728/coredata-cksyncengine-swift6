@@ -45,6 +45,7 @@ The app tracks **Users** and their associated **SwimTimes**. Features include:
 * Local persistence via Core Data, with syncing to CloudKit via CKSyncEngine.
 
 Additionally, when the app is launched for the first time (or if there are no local users), it automatically checks for data in iCloud and attempts to synchronize any available records before allowing the user to interact with the app. This ensures that returning users or devices get their data downloaded and up-to-date before making any changes locally.
+
 ---
 
 ## 🗂 Repository Layout
@@ -129,5 +130,3 @@ Please feel free to:
 The intention is to produce a **reliable, Swift 6-compatible reference app** showcasing CloudKit syncing via CKSyncEngine. Ultimately, this should serve as a blueprint for other apps in need of offline persistence + CloudKit integration.
 
 ---
-[2]: https://superwall.com/blog/syncing-data-with-cloudkit-in-your-ios-app-using-cksyncengine-and-swift-and-swiftui?utm_source=chatgpt.com "Syncing data with CloudKit in your iOS app using ..."
-[3]: https://github.com/apple/sample-cloudkit-coredatasync?utm_source=chatgpt.com "apple/sample-cloudkit-coredatasync"
