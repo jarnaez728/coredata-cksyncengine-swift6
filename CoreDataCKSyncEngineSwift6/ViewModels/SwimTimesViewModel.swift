@@ -57,7 +57,7 @@ class SwimTimesViewModel: ObservableObject{
             await MainActor.run {
                 swimTimes.append(newSwimTime)
             }
-            await syncEngine.queueSwimTimesToCloudKit(for: [newSwimTime])
+            syncEngine.queueSwimTimesToCloudKit(for: [newSwimTime])
         } catch {
             logDebug("Tiempo duplicado o error: \(error.localizedDescription)")
         }
@@ -65,7 +65,7 @@ class SwimTimesViewModel: ObservableObject{
     
     func deleteSwimTime(id: UUID) {
         // 1. Remove from arrays immediately (UI expects this!)
-        guard let deletedSwimTime = swimTimes.first(where: { $0.id == id }) else { return }
+        guard swimTimes.first(where: { $0.id == id }) != nil else { return }
         swimTimes.removeAll { $0.id == id }
         
         // 2. Now perform async deletion in the background
@@ -78,7 +78,7 @@ class SwimTimesViewModel: ObservableObject{
     private func deleteAsyncSwimTime(id: UUID) async {
         do {
             try await swimTimesRepository.deleteSwimTime(withId: id)
-            await syncEngine.queueSwimTimeDeletions([id])
+            syncEngine.queueSwimTimeDeletions([id])
         } catch {
             logDebug("Error borrando tiempo: \(error.localizedDescription)")
             // Optionally, restore item if you want "undo" support
@@ -97,10 +97,10 @@ class SwimTimesViewModel: ObservableObject{
         self.swimTimes[index] = updatedSwimTime
         do {
             if let updated = try await swimTimesRepository.updateSwimTime(id: id, newDate: newDate, newStyle: newStyle, newDistance: newDistance, newTime: newTime, newUser: newUser) {
-                if let idx = self.swimTimes.firstIndex(where: { $0.id == id }), let originalSwimTime = swimTimes.first(where: {$0.id == id}) {
+                if let idx = self.swimTimes.firstIndex(where: { $0.id == id }) {
                     self.swimTimes[idx] = updated
                 }
-                await syncEngine.queueSwimTimesToCloudKit(for: [updated])
+                syncEngine.queueSwimTimesToCloudKit(for: [updated])
             }
         } catch {
             logDebug("Error updating swimtime: \(error)")

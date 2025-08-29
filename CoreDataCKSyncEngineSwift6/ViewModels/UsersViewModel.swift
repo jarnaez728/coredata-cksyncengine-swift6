@@ -56,7 +56,7 @@ class UsersViewModel: ObservableObject{
         do {
             try await usersRepository.addUser(newUser)
             self.users.append(newUser)
-            await syncEngine.queueUsersToCloudKit(for: [newUser])
+            syncEngine.queueUsersToCloudKit(for: [newUser])
         } catch {
             logDebug("Error saving user: \(error)")
         }
@@ -76,7 +76,7 @@ class UsersViewModel: ObservableObject{
     private func deleteAsyncUser(id: UUID) async {
         do {
             try await usersRepository.deleteUser(withId: id)
-            await syncEngine.queueUserDeletions([id])
+            syncEngine.queueUserDeletions([id])
         } catch {
             logDebug("Error deleting user: \(error)")
             // Optional: you could re-add the user if you want to support undo on failure.
@@ -90,7 +90,7 @@ class UsersViewModel: ObservableObject{
         do {
             try await usersRepository.updateUser(updatedUser)
             self.users[index] = updatedUser
-            await syncEngine.queueUsersToCloudKit(for: [updatedUser])
+            syncEngine.queueUsersToCloudKit(for: [updatedUser])
         } catch {
             logDebug("Error updating user: \(error)")
         }

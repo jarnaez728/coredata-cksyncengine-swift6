@@ -9,7 +9,7 @@ import Foundation
 import CoreData
 import CloudKit
 
-final class SwimTimesRepository {
+final class SwimTimesRepository: @unchecked Sendable {
     private let context: NSManagedObjectContext
     
     init(context: NSManagedObjectContext) {
@@ -43,7 +43,7 @@ final class SwimTimesRepository {
     func deleteSwimTime(withId id: UUID) async throws {
         try await context.perform {
             let request: NSFetchRequest<SwimTimeEntity> = SwimTimeEntity.fetchRequest()
-            request.predicate = NSPredicate(format: "id == %@", id as CVarArg)
+            request.predicate = NSPredicate(format: "id == %@", id as (any CVarArg))
             if let entity = try self.context.fetch(request).first {
                 self.context.delete(entity)
                 try self.context.save()
@@ -56,7 +56,7 @@ final class SwimTimesRepository {
             context.perform {
                 do {
                     let request: NSFetchRequest<SwimTimeEntity> = SwimTimeEntity.fetchRequest()
-                    request.predicate = NSPredicate(format: "id == %@", id as CVarArg)
+                    request.predicate = NSPredicate(format: "id == %@", id as (any CVarArg))
                     guard let entity = try self.context.fetch(request).first else {
                         continuation.resume(returning: nil)
                         return
@@ -64,7 +64,7 @@ final class SwimTimesRepository {
 
                     entity.date = newDate
                     entity.style = newStyle.rawValue
-                    entity.distance = Int16(newDistance)
+                    entity.distance = Int32(newDistance)
                     entity.time = newTime
                     entity.userId = newUser
 
@@ -91,7 +91,7 @@ final class SwimTimesRepository {
     func deleteSwimTimesFromUser(userId: UUID) async throws {
         try await context.perform {
             let request: NSFetchRequest<SwimTimeEntity> = SwimTimeEntity.fetchRequest()
-            request.predicate = NSPredicate(format: "userId == %@", userId as CVarArg)
+            request.predicate = NSPredicate(format: "userId == %@", userId as (any CVarArg))
             let results = try self.context.fetch(request)
             for entity in results {
                 self.context.delete(entity)
@@ -104,8 +104,8 @@ final class SwimTimesRepository {
     
     func batchDeleteSwimTimesFromUser(userId: UUID) async throws {
         try await context.perform {
-            let fetchRequest: NSFetchRequest<NSFetchRequestResult> = SwimTimeEntity.fetchRequest()
-            fetchRequest.predicate = NSPredicate(format: "userId == %@", userId as CVarArg)
+            let fetchRequest: NSFetchRequest<any NSFetchRequestResult> = SwimTimeEntity.fetchRequest()
+            fetchRequest.predicate = NSPredicate(format: "userId == %@", userId as (any CVarArg))
             let batchDeleteRequest = NSBatchDeleteRequest(fetchRequest: fetchRequest)
             batchDeleteRequest.resultType = .resultTypeObjectIDs
             let result = try self.context.execute(batchDeleteRequest) as? NSBatchDeleteResult
@@ -122,11 +122,15 @@ final class SwimTimesRepository {
 
 // MARK: - Convertir de CoreData a SwimTime
 extension SwimTimeEntity {
-    convenience init(record: CKRecord, context: NSManagedObjectContext) {
+    convenience init?(record: CKRecord, context: NSManagedObjectContext) {
+        guard let uuid = UUID(uuidString: record.recordID.recordName) else {
+            logDebug("❌ Invalid recordID for SwimTime: \(record.recordID.recordName)")
+            return nil
+        }
         self.init(context: context)
-        self.id = UUID(uuidString: record.recordID.recordName) ?? UUID()
+        self.id = uuid
         self.date = record["date"] as? Date
-        self.distance = Int16(record["distance"] as? Int ?? 0)
+        self.distance = (record["distance"] as? NSNumber)?.int32Value ?? 0
         self.style = record["style"] as? String
         self.time = record["time"] as? Double ?? 0.0
         if let userIdStr = record["userId"] as? String {
@@ -139,8 +143,9 @@ extension SwimTimeEntity {
 
     // Pasar a CKRecord
     func toCKRecord() -> CKRecord {
+        precondition(self.id != nil, "id must exist before building CKRecord")
         let zoneID = CKRecordZone.ID(zoneName: CloudKitConfig.zoneName)
-        let recordID = CKRecord.ID(recordName: self.id?.uuidString ?? UUID().uuidString, zoneID: zoneID)
+        let recordID = CKRecord.ID(recordName: self.id!.uuidString, zoneID: zoneID)
         if let systemFields = self.systemFields {
             do {
                 let unarchiver = try NSKeyedUnarchiver(forReadingFrom: systemFields)
@@ -191,7 +196,7 @@ extension SwimTimeEntity {
     func fromDomainModel(_ swimTime: SwimTime) {
         self.id = swimTime.id
         self.date = swimTime.date
-        self.distance = Int16(swimTime.distance)
+        self.distance = Int32(swimTime.distance)
         self.style = swimTime.style.rawValue
         self.time = swimTime.time
         self.userId = swimTime.userId

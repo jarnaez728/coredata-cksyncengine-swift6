@@ -31,7 +31,7 @@ class AppInitialization: ObservableObject {
     
     private var syncTimeoutTask: Task<Void, Never>?
     
-    private var cloudSyncObserver: NSObjectProtocol?
+    private var cloudSyncObserver: (any NSObjectProtocol)?
 
     init(usersVM: UsersViewModel, swimTimesVM: SwimTimesViewModel) {
         self.usersVM = usersVM
@@ -65,6 +65,7 @@ class AppInitialization: ObservableObject {
                 
                 if cloudCount > 0 {
                     self.state = .syncingCloud
+                    await usersVM.syncEngine.refreshDataFromCloud()
                     // Añade observer
                     cloudSyncObserver = NotificationCenter.default.addObserver(
                         forName: .cloudSyncChangesFinished,

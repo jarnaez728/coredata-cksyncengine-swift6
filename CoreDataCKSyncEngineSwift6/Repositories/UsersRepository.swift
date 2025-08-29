@@ -9,7 +9,7 @@ import Foundation
 import CoreData
 import CloudKit
 
-final class UsersRepository {
+final class UsersRepository: @unchecked Sendable {
     private let context: NSManagedObjectContext
     
     init(context: NSManagedObjectContext) {
@@ -47,7 +47,7 @@ final class UsersRepository {
     func deleteUser(withId id: UUID) async throws {
         try await context.perform {
             let request: NSFetchRequest<UserEntity> = UserEntity.fetchRequest()
-            request.predicate = NSPredicate(format: "id == %@", id as CVarArg)
+            request.predicate = NSPredicate(format: "id == %@", id as (any CVarArg))
             if let entity = try self.context.fetch(request).first {
                 self.context.delete(entity)
                 try self.context.save()
@@ -59,7 +59,7 @@ final class UsersRepository {
     func updateUser(_ user: User) async throws {
         try await context.perform {
             let request: NSFetchRequest<UserEntity> = UserEntity.fetchRequest()
-            request.predicate = NSPredicate(format: "id == %@", user.id as CVarArg)
+            request.predicate = NSPredicate(format: "id == %@", user.id as (any CVarArg))
             if let entity = try self.context.fetch(request).first {
                 entity.fromDomainModel(user)
                 try self.context.save()
@@ -70,9 +70,13 @@ final class UsersRepository {
 
 // MARK: - Mapping extension
 extension UserEntity {
-    convenience init(record: CKRecord, context: NSManagedObjectContext) {
+    convenience init?(record: CKRecord, context: NSManagedObjectContext) {
+        guard let uuid = UUID(uuidString: record.recordID.recordName) else {
+            logDebug("❌ Invalid recordID for User: \(record.recordID.recordName)")
+            return nil
+        }
         self.init(context: context)
-        self.id = UUID(uuidString: record.recordID.recordName) ?? UUID()
+        self.id = uuid
         self.name = record["name"] as? String
         let archiver = NSKeyedArchiver(requiringSecureCoding: true)
         record.encodeSystemFields(with: archiver)
@@ -81,8 +85,9 @@ extension UserEntity {
     
     // Pasar a CKRecord
     func toCKRecord() -> CKRecord {
+        precondition(self.id != nil, "id must exist before building CKRecord")
         let zoneID = CKRecordZone.ID(zoneName: CloudKitConfig.zoneName)
-        let recordID = CKRecord.ID(recordName: self.id?.uuidString ?? UUID().uuidString, zoneID: zoneID)
+        let recordID = CKRecord.ID(recordName: self.id!.uuidString, zoneID: zoneID)
         
         if let systemFields = self.systemFields {
             do {
@@ -94,7 +99,7 @@ extension UserEntity {
                     return record
                 }
             } catch {
-                print("❗️Error decoding systemFields: \(error)")
+                logDebug("❗️Error decoding systemFields: \(error)")
             }
         }
         
