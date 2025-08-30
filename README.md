@@ -96,6 +96,8 @@ If you want to see how these ideas scale into a full-featured product, check it 
 - 🌐 Website: [https://swimtimes.es](https://swimtimes.es)  
 - 📱 App Store: [SwimTimes on the App Store](https://apps.apple.com/us/app/swimtimes/id1640254914)
 
+NOTE: The full SwimTimes app hasn’t adopted all these changes yet, but they’re coming in version 2.0, which I plan to release before 2026.
+
 ---
 
 ## 🗂 Repository Layout
