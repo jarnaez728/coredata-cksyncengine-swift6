@@ -11,6 +11,7 @@ The goal is to provide a clear reference implementation for others, highlighting
 - [Architecture](#-architecture)
 - [Inspiration & References](#-inspiration--references)
 - [Project Overview](#-project-overview)
+- [Real App: SwimTimes](#-real-app-swimtimes)
 - [Repository Layout](#-repository-layout)
 - [Setup Instructions](#-setup-instructions)
 - [Testing & Behavior](#-testing--behavior)
@@ -84,6 +85,16 @@ Features include:
 - Automatic CloudKit sync via `CKSyncEngine`.
 
 On first launch (or when no local users exist), the app fetches any iCloud data before allowing interaction, ensuring consistency across devices.
+
+---
+
+## 📲 Real App: SwimTimes
+
+This demo project is a simplified version inspired by the real app **[SwimTimes](https://swimtimes.es/)**.  
+If you want to see how these ideas scale into a full-featured product, check it out here:
+
+- 🌐 Website: [https://swimtimes.es](https://swimtimes.es)  
+- 📱 App Store: [SwimTimes on the App Store](https://apps.apple.com/us/app/swimtimes/id1640254914)
 
 ---
 
