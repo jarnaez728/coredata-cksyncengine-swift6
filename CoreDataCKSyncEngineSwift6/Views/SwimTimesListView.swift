@@ -22,43 +22,51 @@ struct SwimTimesListView: View {
     var body: some View {
         if let user = selectedUser{
             VStack {
-                List {
-                    ForEach(userSwimTimes) { swimTime in
-                        VStack(alignment: .leading) {
-                            SwimTimeRowView(swimtime: swimTime)
+                if userSwimTimes.isEmpty {
+                    Spacer()
+                    Text("No swim times. Create one!")
+                        .font(.headline)
+                        .foregroundColor(.secondary)
+                    Spacer()
+                } else {
+                    List {
+                        ForEach(userSwimTimes) { swimTime in
+                            VStack(alignment: .leading) {
+                                SwimTimeRowView(swimtime: swimTime)
+                            }
                         }
+                        .onDelete(perform: deleteSwimTime)
                     }
-                    .onDelete(perform: deleteSwimTime)
-                }
-                .overlay(
-                    VStack {
-                        Spacer()
-                        HStack {
+                    .overlay(
+                        VStack {
                             Spacer()
-                            Text("SwimTimes: \(userSwimTimes.count)")
-                                .font(.caption)
-                                .foregroundColor(.gray)
-                                .padding(.bottom, 8)
-                                .padding(.trailing, 16)
+                            HStack {
+                                Spacer()
+                                Text("SwimTimes: \(userSwimTimes.count)")
+                                    .font(.caption)
+                                    .foregroundColor(.gray)
+                                    .padding(.bottom, 8)
+                                    .padding(.trailing, 16)
+                            }
                         }
+                    )
+                }
+            }
+            .toolbar {
+                ToolbarItemGroup(placement: .primaryAction) {
+                    Button {
+                        Task{
+                            await swimtimesVM.addSwimTime(newSwimTime(for: user))
+                        }
+                    } label: {
+                        Label("New SwimTime", systemImage: "plus")
                     }
-                )
-                .toolbar {
-                    ToolbarItemGroup(placement: .primaryAction) {
-                        Button {
-                            Task{
-                                await swimtimesVM.addSwimTime(newSwimTime(for: user))
-                            }
-                        } label: {
-                            Label("New SwimTime", systemImage: "plus")
+                    Button {
+                        Task{
+                            await modifyFirstTime()
                         }
-                        Button {
-                            Task{
-                                await modifyFirstTime()
-                            }
-                        } label: {
-                            Label("Modify first swimTime", systemImage: "pencil")
-                        }
+                    } label: {
+                        Label("Modify first swimTime", systemImage: "pencil")
                     }
                 }
             }
@@ -75,11 +83,11 @@ struct SwimTimesListView: View {
     func modifyFirstTime() async {
         guard let user = selectedUser, let first = userSwimTimes.first else { return }
         
-        // Nuevos valores aleatorios
+        // Random new values
         let newDistance = [50, 100, 200, 400, 800, 1500].randomElement()!
         let newStyle = Style.allCases.randomElement()!
         let newTime = Double.random(in: 25.0...120.0)
-        let newDate = Date() // O puedes dejar el anterior
+        let newDate = Date() // Or keep the previous value
         
         await swimtimesVM.modifySwimTime(
             id: first.id,

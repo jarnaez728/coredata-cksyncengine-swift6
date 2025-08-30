@@ -15,13 +15,37 @@ struct UserListView: View {
     
     var body: some View {
         NavigationSplitView{
-            List(selection: $selectedUser) {
-                ForEach(usersVM.users) { user in
-                    NavigationLink(value: user) {
-                        Text(user.name)
+            VStack {
+                if usersVM.users.isEmpty {
+                    Spacer()
+                    Text("No users. Create one!")
+                        .font(.headline)
+                        .foregroundColor(.secondary)
+                    Spacer()
+                } else {
+                    List(selection: $selectedUser) {
+                        ForEach(usersVM.users) { user in
+                            NavigationLink(value: user) {
+                                Text(user.name)
+                            }
+                        }
+                        .onDelete(perform: deleteUser)
                     }
+                    .overlay(
+                        VStack {
+                            Spacer()
+                            // Footer of the list: number of users
+                            HStack {
+                                Spacer()
+                                Text("Users: \(usersVM.users.count)")
+                                    .font(.caption)
+                                    .foregroundColor(.gray)
+                                    .padding(.bottom, 8)
+                                    .padding(.trailing, 16)
+                            }
+                        }
+                    )
                 }
-                .onDelete(perform: deleteUser)
             }
             .toolbar {
                 ToolbarItemGroup(placement: .primaryAction) {
@@ -41,20 +65,6 @@ struct UserListView: View {
                     }
                 }
             }
-            .overlay(
-                VStack {
-                    Spacer()
-                    // Pie de la lista: número de usuarios
-                    HStack {
-                        Spacer()
-                        Text("Users: \(usersVM.users.count)")
-                            .font(.caption)
-                            .foregroundColor(.gray)
-                            .padding(.bottom, 8)
-                            .padding(.trailing, 16)
-                    }
-                }
-            )
         }detail:{
             if let _ = selectedUser{
                 NavigationStack{
@@ -69,6 +79,7 @@ struct UserListView: View {
     func deleteUser(at indexSet: IndexSet) {
         guard let idx = indexSet.first, usersVM.users.indices.contains(idx) else { return }
         let idToDelete = usersVM.users[idx].id
+        swimtimesVM.deleteSwimTimesFromUser(userId: idToDelete)
         usersVM.deleteUser(id: idToDelete)
         selectedUser = nil
     }

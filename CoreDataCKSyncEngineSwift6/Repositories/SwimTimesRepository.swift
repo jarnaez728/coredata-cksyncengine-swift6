@@ -9,6 +9,9 @@ import Foundation
 import CoreData
 import CloudKit
 
+/// Repository layer that encapsulates CRUD operations for `SwimTime` domain objects
+/// using Core Data. Provides both individual and batch operations, plus helpers
+/// to convert between Core Data entities and CloudKit records.
 final class SwimTimesRepository: @unchecked Sendable {
     private let context: NSManagedObjectContext
     
@@ -16,7 +19,8 @@ final class SwimTimesRepository: @unchecked Sendable {
         self.context = context
     }
     
-    // MARK: - Métodos CRUD para SwimTime
+    // MARK: - CRUD operations for SwimTime
+    /// Fetches all swim times from Core Data and maps them into domain models.
     func fetchAllSwimTimes() async throws -> [SwimTime] {
         try await withCheckedThrowingContinuation { continuation in
             context.perform {
@@ -32,6 +36,7 @@ final class SwimTimesRepository: @unchecked Sendable {
         }
     }
     
+    /// Inserts a new SwimTime into Core Data.
     func addSwimTime(_ swimTime: SwimTime) async throws {
         try await context.perform {
             let entity = SwimTimeEntity(context: self.context)
@@ -40,6 +45,7 @@ final class SwimTimesRepository: @unchecked Sendable {
         }
     }
     
+    /// Deletes a SwimTime entity with the given UUID if it exists.
     func deleteSwimTime(withId id: UUID) async throws {
         try await context.perform {
             let request: NSFetchRequest<SwimTimeEntity> = SwimTimeEntity.fetchRequest()
@@ -51,6 +57,7 @@ final class SwimTimesRepository: @unchecked Sendable {
         }
     }
     
+    /// Updates the specified fields of a SwimTime entity and returns the updated domain model.
     func updateSwimTime(id: UUID, newDate: Date, newStyle: Style, newDistance: Int, newTime: Double, newUser: UUID) async throws -> SwimTime? {
         try await withCheckedThrowingContinuation { continuation in
             context.perform {
@@ -79,6 +86,7 @@ final class SwimTimesRepository: @unchecked Sendable {
         }
     }
 
+    /// Performs a batch insert of multiple SwimTime domain objects using NSBatchInsertRequest.
     func batchAddSwimTimes(_ swimTimes: [SwimTime]) async throws {
         try await context.perform {
             guard !swimTimes.isEmpty else { return }
@@ -88,6 +96,7 @@ final class SwimTimesRepository: @unchecked Sendable {
         }
     }
     
+    /// Deletes all SwimTime entities belonging to the specified user.
     func deleteSwimTimesFromUser(userId: UUID) async throws {
         try await context.perform {
             let request: NSFetchRequest<SwimTimeEntity> = SwimTimeEntity.fetchRequest()
@@ -102,6 +111,7 @@ final class SwimTimesRepository: @unchecked Sendable {
         }
     }
     
+    /// Performs a batch delete of all SwimTime entities for a given user, merging changes into the context.
     func batchDeleteSwimTimesFromUser(userId: UUID) async throws {
         try await context.perform {
             let fetchRequest: NSFetchRequest<any NSFetchRequestResult> = SwimTimeEntity.fetchRequest()
@@ -120,7 +130,8 @@ final class SwimTimesRepository: @unchecked Sendable {
     
 }
 
-// MARK: - Convertir de CoreData a SwimTime
+// MARK: - Core Data <-> CloudKit / Domain mapping
+/// Initializes a SwimTimeEntity from a CloudKit record. Returns nil if the recordID is invalid.
 extension SwimTimeEntity {
     convenience init?(record: CKRecord, context: NSManagedObjectContext) {
         guard let uuid = UUID(uuidString: record.recordID.recordName) else {
@@ -141,7 +152,7 @@ extension SwimTimeEntity {
         self.systemFields = archiver.encodedData
     }
 
-    // Pasar a CKRecord
+    /// Converts this SwimTimeEntity into a CKRecord, reusing systemFields if available to preserve metadata.
     func toCKRecord() -> CKRecord {
         precondition(self.id != nil, "id must exist before building CKRecord")
         let zoneID = CKRecordZone.ID(zoneName: CloudKitConfig.zoneName)
@@ -151,7 +162,7 @@ extension SwimTimeEntity {
                 let unarchiver = try NSKeyedUnarchiver(forReadingFrom: systemFields)
                 unarchiver.requiresSecureCoding = true
                 if let record = CKRecord(coder: unarchiver) {
-                    // Actualiza campos
+                    // Update fields before returning the record
                     record["date"] = self.date
                     record["distance"] = self.distance
                     record["style"] = self.style
@@ -172,6 +183,8 @@ extension SwimTimeEntity {
         record["userId"] = self.userId?.uuidString
         return record
     }
+    /// Converts this SwimTimeEntity into its domain model representation.
+    /// Returns nil if required fields are missing.
     func toDomainModel() -> SwimTime? {
         guard let id = self.id,
               let date = self.date,
@@ -179,7 +192,7 @@ extension SwimTimeEntity {
               let style = Style(rawValue: styleStr),
               let userId = self.userId
         else {
-            // Si algún campo esencial falla, no se crea el modelo
+            // If an essential field is missing, do not create a domain model
             return nil
         }
         
@@ -193,6 +206,7 @@ extension SwimTimeEntity {
         )
     }
     
+    /// Populates the entity's fields from a SwimTime domain model.
     func fromDomainModel(_ swimTime: SwimTime) {
         self.id = swimTime.id
         self.date = swimTime.date

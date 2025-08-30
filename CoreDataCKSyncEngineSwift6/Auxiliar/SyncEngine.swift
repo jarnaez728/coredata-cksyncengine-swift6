@@ -11,6 +11,12 @@ import CoreData
 
 fileprivate typealias ChangeToken = CKSyncEngine.State.Serialization
 
+/// A thin wrapper around `CKSyncEngine` that orchestrates CloudKit <-> Core Data
+/// synchronization for a custom private zone. It:
+/// - sets up the sync engine and caches the state token
+/// - debounces outbound sends to avoid chatty writes
+/// - translates CloudKit events into Core Data mutations
+/// - publishes notifications so the UI can react to sync progress
 final class SyncEngine: @unchecked Sendable {
     // MARK: - Properties
     private let container: CKContainer = CKContainer(identifier: CloudKitConfig.identifier)
@@ -40,7 +46,7 @@ final class SyncEngine: @unchecked Sendable {
     }
     
     deinit {
-        debounceTask?.cancel()   // 👈 Cancelamos si aún sigue viva
+        debounceTask?.cancel()   // Cancel any pending debounce task if still running
     }
     
     // MARK: - Send Orchestration / Debounce
@@ -51,13 +57,15 @@ final class SyncEngine: @unchecked Sendable {
         debounceTask = Task.detached { [weak self] in
             do { try await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000)) }
             catch { return }
-            await self?.refreshDataFromLocal() // sendChanges fuera del callback original
+            await self?.refreshDataFromLocal() // Trigger sendChanges outside original callback
         }
     }
     
     private let zoneID = CKRecordZone.ID(zoneName: CloudKitConfig.zoneName)
     
-    //MARK: Trigger manual syncing
+    // MARK: - Manual sync triggers
+    /// Sends any pending local Core Data changes to CloudKit using the configured scope.
+    /// This is the debounced entry-point used across the engine to push changes.
     func refreshDataFromLocal() async{
         do {
               try await engine.sendChanges(
@@ -68,6 +76,8 @@ final class SyncEngine: @unchecked Sendable {
           }
     }
     
+    /// Fetches remote changes from CloudKit and applies them to Core Data.
+    /// Useful on first launch or when you need a manual pull-to-refresh.
     func refreshDataFromCloud() async {
         logDebug("Refresco from la nube")
         do {
@@ -79,14 +89,17 @@ final class SyncEngine: @unchecked Sendable {
     }
     
     // MARK: - Zone bootstrap
+    /// Ensures the custom record zone exists in the private database by enqueueing a `.saveZone` change.
+    /// The actual write is performed by the debounced sender.
     func ensureZoneExists() {
         let zone = CKRecordZone(zoneName: CloudKitConfig.zoneName)
         engine.state.add(pendingDatabaseChanges: [.saveZone(zone)])
-        scheduleDebouncedSend(after: 0.2)   // empuja la creación de la zona
+        scheduleDebouncedSend(after: 0.2)   // Nudge the engine to create the zone
     }
 
     
     // MARK: - Sync Token Management
+    /// Persists the sync engine's serialized state to UserDefaults so the engine can resume efficiently.
     private func cacheSyncToken(_ token: ChangeToken) {
         do {
             let tokenData = try JSONEncoder().encode(token)
@@ -96,6 +109,7 @@ final class SyncEngine: @unchecked Sendable {
         }
     }
     
+    /// Restores the previously cached engine state from UserDefaults, clearing it if it is corrupted.
     private func fetchCachedSyncToken() -> ChangeToken? {
         guard let data = defaults.data(forKey: syncTokenKey) else { return nil }
         do { return try JSONDecoder().decode(ChangeToken.self, from: data) }
@@ -106,6 +120,8 @@ final class SyncEngine: @unchecked Sendable {
         }
     }
     
+    /// Deletes *all* records of a record type from the given database, paginating through results.
+    /// Intended for maintenance/reset scenarios; not used during normal sync.
     private func deleteAllRecords(ofType recordType: String, in database: CKDatabase) async {
         var cursor: CKQueryOperation.Cursor? = nil
 
@@ -142,6 +158,8 @@ final class SyncEngine: @unchecked Sendable {
     }
     
     // MARK: - Full Sync/Reset Operations
+    /// Recreates the zone if needed and enqueues *all* local entities for upload.
+    /// Useful after account sign-in or when you want to force a full re-upload.
     func reuploadEverything() async {
         logDebug("☁️ Uploading all data and creating zone.")
         engine.state.add(pendingDatabaseChanges: [ .saveZone(CKRecordZone(zoneName: CloudKitConfig.zoneName)) ])
@@ -151,24 +169,26 @@ final class SyncEngine: @unchecked Sendable {
         scheduleDebouncedSend()
     }
     
+    /// Removes all local objects and enqueues deletions for all corresponding CloudKit records.
+    /// Also schedules a zone deletion and clears the persisted sync token.
     func removeAllData() async {
         logDebug("☁️ Removing all data locally and on the server.")
         
-        // 1. Recoge todos los IDs de todos los objetos locales
+        // 1) Collect all local record IDs
         let allUserIDs       = await fetchRecordIDs(UserEntity.fetchRequest(),       idKeyPath: \.id)
         let allSwimTimeIDs   = await fetchRecordIDs(SwimTimeEntity.fetchRequest(),   idKeyPath: \.id)
         
         
-        // 2. Borra todas las entidades locales
+        // 2) Delete all local Core Data entities
         await removeAllUserEntities()
         await removeAllSwimTimeEntities()
         
-        // 3. Marca los registros remotos para eliminación en CloudKit
+        // 3) Enqueue deletions for the corresponding CloudKit records
         let recordRemovals: [CKSyncEngine.PendingRecordZoneChange] =
         (allUserIDs + allSwimTimeIDs).map { .deleteRecord($0) }
         engine.state.add(pendingRecordZoneChanges: recordRemovals)
         
-        // 4. Borra la zona de CloudKit si quieres eliminar *todo* en la nube (opcional)
+        // 4) Optionally delete the entire custom zone in CloudKit
         engine.state.add(pendingDatabaseChanges: [ .deleteZone(zoneID) ])
         
         defaults.removeObject(forKey: syncTokenKey)
@@ -179,6 +199,8 @@ final class SyncEngine: @unchecked Sendable {
 
 extension SyncEngine: CKSyncEngineDelegate {
     // MARK: - CKSyncEngineDelegate
+    /// Main event handler for `CKSyncEngine`. Translates engine callbacks into Core Data updates,
+    /// state token caching, and UI notifications.
     func handleEvent(_ event: CKSyncEngine.Event, syncEngine: CKSyncEngine) async {
         logDebug("☁️ sync engine event came in, processing...")
         switch event {
@@ -201,11 +223,11 @@ extension SyncEngine: CKSyncEngineDelegate {
         case .sentRecordZoneChanges(let sentRecordZoneChanges):
             logDebug("☁️ Processing sent record zone changes.")
             await processSentRecordZoneChanges(sentRecordZoneChanges)
-            // Al empezar la sincronización
+            // Sync cycle starting
         case .willFetchChanges, .willFetchRecordZoneChanges, .willSendChanges:
             logDebug("☁️ Will process changes.")
             postOnMain(.syncStatusChanged, object: SyncStatus.syncing)
-        // Al finalizar y guardar el estado
+        // Sync cycle finished; propagate notifications
         case .didSendChanges,
              .didFetchRecordZoneChanges,
              .didFetchChanges,
@@ -219,13 +241,18 @@ extension SyncEngine: CKSyncEngineDelegate {
     }
     
     // Delegate callback signifying CloudKit is ready for our changes, so we send the ones we marked earlier
+    /// Supplies the next batch of record-zone changes to the engine. We:
+    /// 1) filter pending changes for the current scope
+    /// 2) build CKRecord snapshots only for the needed IDs
+    /// 3) drop `.saveRecord` items that have no local data (safety)
+    /// 4) return a `RecordZoneChangeBatch` whose closure reliably resolves records to save
     func nextRecordZoneChangeBatch(_ context: CKSyncEngine.SendChangesContext, syncEngine: CKSyncEngine) async -> CKSyncEngine.RecordZoneChangeBatch? {
-        // 1) Recoge solo los cambios del scope solicitado
+        // 1) Take only the changes within the requested scope
         let scope = context.options.scope
         let changes = syncEngine.state.pendingRecordZoneChanges.filter { scope.contains($0) }
         guard !changes.isEmpty else { return nil }
 
-        // 2) Extrae los recordNames implicados (saves y deletes)
+        // 2) Extract the involved recordNames (saves & deletes)
         let idsNeeded = Set(changes.compactMap { change -> String? in
             switch change {
             case .saveRecord(let id), .deleteRecord(let id): return id.recordName
@@ -233,10 +260,10 @@ extension SyncEngine: CKSyncEngineDelegate {
             }
         })
 
-        // Convierte una sola vez a UUID
+        // Convert into UUID just once
         let uuidsNeeded: [UUID] = idsNeeded.compactMap(UUID.init(uuidString:))
 
-        // 3) Construye snapshots *solo* con los objetos necesarios (dentro del perform del contexto)
+        // 3) Build snapshots *only* for the needed objects (inside a context.perform)
         let snapshots = await self.context.perform { () -> (
             user: [String: CKRecord],
             swimTime: [String: CKRecord]
@@ -269,11 +296,11 @@ extension SyncEngine: CKSyncEngineDelegate {
             )
         }
 
-        // 4) Mapa total (recordName -> CKRecord)
+        // 4) Merge into a single map (recordName -> CKRecord)
         let recordMap = snapshots.user
             .merging(snapshots.swimTime) { $1 }
             
-        // 5) Logs (sin tocar NSManagedObject)
+        // 5) Logging (avoid touching NSManagedObject instances)
         for change in changes {
             switch change {
             case .saveRecord(let id):
@@ -295,7 +322,7 @@ extension SyncEngine: CKSyncEngineDelegate {
             }
         }
 
-        // 6) Filtra .saveRecord que no tengan CKRecord y retíralos del estado
+        // 6) Filter out .saveRecord entries without a CKRecord and remove them from state
         let filteredChanges: [CKSyncEngine.PendingRecordZoneChange] = changes.filter { change in
             guard case let .saveRecord(id) = change else { return true }
             let exists = (recordMap[id.recordName] != nil)
@@ -311,7 +338,7 @@ extension SyncEngine: CKSyncEngineDelegate {
             return nil
         }
 
-        // 7) Construye el batch: ahora el closure SIEMPRE devuelve un CKRecord válido
+        // 7) Build the batch: the closure will ALWAYS return a valid CKRecord
         let batch = await CKSyncEngine.RecordZoneChangeBatch(
             pendingChanges: filteredChanges
         ) { [recordMap] recordID in
@@ -327,7 +354,7 @@ extension SyncEngine: CKSyncEngineDelegate {
         return batch
     }
     
-    // SyncEngine.swift
+    /// Returns the total number of records for the given type in the private database, paginating through all results.
     func countRemoteRecordsInCloudKit(recordType: String) async throws -> Int {
         let database = container.privateCloudDatabase
         let query = CKQuery(recordType: recordType, predicate: NSPredicate(value: true))
@@ -348,6 +375,7 @@ extension SyncEngine: CKSyncEngineDelegate {
         return totalCount
     }
     
+    /// Debug utility: logs how many records exist per record type in the private database.
     func printRemoteCloudKitRecords() async {
         let database = container.privateCloudDatabase
         let recordTypes = [
@@ -390,6 +418,8 @@ extension SyncEngine: CKSyncEngineDelegate {
 
 extension SyncEngine {
     // MARK: - CKSyncEngine Events Processing
+    /// Reacts to account changes (sign-in/out/switch). On sign-in, we bootstrap the zone,
+    /// pull from CloudKit, and enqueue a full re-upload. On sign-out/switch we clear local data.
     func processAccountChange(_ event: CKSyncEngine.Event.AccountChange) async {
         switch event.changeType {
         case .signIn:
@@ -425,13 +455,14 @@ extension SyncEngine {
         }
     }
     
+    /// Applies fetched per-record changes to Core Data within a single `perform` block, then posts UI notifications.
     func processFetchedRecordZoneChanges(_ changes: CKSyncEngine.Event.FetchedRecordZoneChanges) async {
 
         var didChangeUsers = false
         var didChangeSwimTimes = false
         
         await context.perform {
-            // MODIFICACIONES
+            // MODIFICATIONS
             for modification in changes.modifications {
                 let record = modification.record
                 let recordType = record.recordType
@@ -471,7 +502,7 @@ extension SyncEngine {
                 }
             }
 
-            // BORRADOS
+            // DELETIONS
             for deletion in changes.deletions {
                 let recordID = deletion.recordID.recordName
                 let recordType = deletion.recordType
@@ -485,20 +516,22 @@ extension SyncEngine {
                 }
             }
 
-            // Guarda dentro del mismo perform
+            // Persist within the same perform block
             self.saveContextSync()
         }
 
-        // 🔔 Notifica FUERA del perform
+        // 🔔 Notify OUTSIDE of the perform block
         if didChangeUsers      { postOnMain(.usersDidChange) }
         if didChangeSwimTimes  { postOnMain(.swimTimesDidChange) }
         
     }
 
     
+    /// Handles acknowledgements from CloudKit after sending changes. Updates local systemFields on success
+    /// and resolves server-record-changed conflicts by favoring the server version.
     func processSentRecordZoneChanges(_ changes: CKSyncEngine.Event.SentRecordZoneChanges) async {
         
-        // ✅ 1) ÉXITOS: refresca systemFields locales
+        // ✅ 1) SUCCESS: refresh local systemFields
         if !changes.savedRecords.isEmpty {
             await context.perform {
                 for record in changes.savedRecords {
@@ -507,7 +540,7 @@ extension SyncEngine {
                     record.encodeSystemFields(with: arch)
                     let data = arch.encodedData
 
-                    // Actualiza la entidad correspondiente si existe
+                    // Update the corresponding entity if it exists
                     if let e = try? self.fetchUserEntitySync(by: name) {
                         e.systemFields = data
                     } else if let e = try? self.fetchSwimTimeEntitySync(by: name) {
@@ -528,6 +561,8 @@ extension SyncEngine {
         }
     }
     
+    /// Conflict resolution strategy: prefer the server record, update local Core Data fields,
+    /// and overwrite `systemFields` with those from the server record.
     private func resolveConflict(localRecord: CKRecord, serverRecord: CKRecord) async {
         let recordType = serverRecord.recordType
         let recordID = serverRecord.recordID.recordName
@@ -576,6 +611,8 @@ extension SyncEngine {
 extension SyncEngine {
     
     // MARK: - CoreData Helpers: UserEntity
+    /// Helper utilities to fetch, queue, and remove Core Data entities used by the sync engine.
+    /// Fetches all UserEntity objects.
     func fetchAllUserEntities() async -> [UserEntity] {
         await withCheckedContinuation { continuation in
             context.perform {
@@ -591,6 +628,7 @@ extension SyncEngine {
         }
     }
 
+    /// Fetches a single UserEntity by its CKRecord recordName (UUID string).
     func fetchUserEntity(by recordName: String) async -> UserEntity? {
         await withCheckedContinuation { continuation in
             context.perform {
@@ -607,6 +645,7 @@ extension SyncEngine {
         }
     }
     
+    /// Sync variant used inside context.perform; throws on invalid UUID.
     private func fetchUserEntitySync(by recordName: String) throws -> UserEntity? {
         guard let uuid = UUID(uuidString: recordName) else {
             throw NSError(domain: "Invalid UUID", code: 0)
@@ -617,6 +656,7 @@ extension SyncEngine {
     }
 
 
+    /// Deletes every UserEntity and saves the context.
     func removeAllUserEntities() async {
         let all = await fetchAllUserEntities()
         await context.perform {
@@ -625,6 +665,7 @@ extension SyncEngine {
         }
     }
 
+    /// Enqueues save operations for all users in Core Data.
     func queueAllUsersToCloudKit() async {
         logDebug("☁️ Queuing all CoreData users to the sync state.")
         /*
@@ -640,6 +681,7 @@ extension SyncEngine {
         scheduleDebouncedSend(after: 1.0)
     }
     
+    /// Enqueues save operations for a specific set of domain users.
     func queueUsersToCloudKit(for users: [User]) {
         logDebug("☁️ Queuing selected Users to the sync state: \(users.count) items.")
         let recordIDs = users.map { user in
@@ -650,6 +692,7 @@ extension SyncEngine {
         scheduleDebouncedSend(after: 1.0)
     }
 
+    /// Enqueues delete operations for the given user IDs.
     func queueUserDeletions(_ ids: [UUID]) {
         logDebug("☁️ Queues User deletions to the sync state (CoreData).")
         let recordIDs = ids.map {
@@ -662,6 +705,7 @@ extension SyncEngine {
 
 
     // MARK: - CoreData Helpers: SwimTimeEntity
+    /// Fetches all SwimTimeEntity objects.
     func fetchAllSwimTimeEntities() async -> [SwimTimeEntity] {
         await withCheckedContinuation { continuation in
             context.perform {
@@ -677,6 +721,7 @@ extension SyncEngine {
         }
     }
 
+    /// Fetches a single SwimTimeEntity by its CKRecord recordName (UUID string).
     func fetchSwimTimeEntity(by recordName: String) async -> SwimTimeEntity? {
         await withCheckedContinuation { continuation in
             context.perform {
@@ -693,6 +738,7 @@ extension SyncEngine {
         }
     }
     
+    /// Sync variant used inside context.perform; throws on invalid UUID.
     private func fetchSwimTimeEntitySync(by recordName: String) throws -> SwimTimeEntity? {
         guard let uuid = UUID(uuidString: recordName) else {
             throw NSError(domain: "Invalid UUID", code: 0)
@@ -702,6 +748,7 @@ extension SyncEngine {
         return try context.fetch(request).first
     }
 
+    /// Deletes every SwimTimeEntity and saves the context.
     func removeAllSwimTimeEntities() async {
         let all = await fetchAllSwimTimeEntities()
         await context.perform {
@@ -712,6 +759,7 @@ extension SyncEngine {
         }
     }
 
+    /// Enqueues save operations for all swim times in Core Data.
     func queueAllSwimTimesToCloudKit() async {
         logDebug("☁️ Queuing all CoreData swimtimes to the sync state.")
         let ids = await fetchRecordIDs(SwimTimeEntity.fetchRequest(), idKeyPath: \.id)
@@ -719,6 +767,7 @@ extension SyncEngine {
         scheduleDebouncedSend(after: 1.0)
     }
     
+    /// Enqueues save operations for a specific set of domain swim times.
     func queueSwimTimesToCloudKit(for swimTimes: [SwimTime]) {
         logDebug("☁️ Queuing selected SwimTimes to the sync state: \(swimTimes.count) items.")
         let recordIDs = swimTimes.map { swimTime in
@@ -729,6 +778,7 @@ extension SyncEngine {
         scheduleDebouncedSend(after: 1.0)
     }
 
+    /// Enqueues delete operations for the given swim time IDs.
     func queueSwimTimeDeletions(_ ids: [UUID]) {
         logDebug("☁️ Queues SwimTime deletions to the sync state (CoreData).")
         let recordIDs = ids.map {
@@ -740,7 +790,8 @@ extension SyncEngine {
     }
     
     // MARK: - General CoreData
-    //Solo llamar desde dentro de context.perform
+    /// Saves the context if there are changes; logs on failure.
+    // Only call from within a `context.perform` block
     private func saveContextSync() {
         do {
             if context.hasChanges {
@@ -751,18 +802,21 @@ extension SyncEngine {
         }
     }
     
+    /// Posts a notification on the main actor without payload.
     private func postOnMain(_ name: Notification.Name) {
         Task { @MainActor in
             NotificationCenter.default.post(name: name, object: nil)
         }
     }
 
+    /// Posts a notification on the main actor with a typed payload.
     private func postOnMain<T: Sendable>(_ name: Notification.Name, object: T?) {
         Task { @MainActor in
             NotificationCenter.default.post(name: name, object: object)
         }
     }
     
+    /// Convenience to map Core Data UUIDs to `CKRecord.ID`s for the custom zone.
     private func fetchRecordIDs<T: NSManagedObject>(_ request: NSFetchRequest<T>, idKeyPath: KeyPath<T, UUID?>) async -> [CKRecord.ID] {
         await context.perform {
             let objs = (try? self.context.fetch(request)) ?? []
@@ -784,7 +838,7 @@ extension NSNotification.Name {
     static let cloudSyncChangesFinished: NSNotification.Name = .init(rawValue: "cloudSyncChangesFinished")
 }
 
-
+/// Names and identifiers used by the CloudKit integration (container, record types, zone, token key).
 enum CloudKitConfig {
     static let identifier = "iCloud.jarnaez.CoreDataCKEngine"
     static let userRecordType = "UserTest"
@@ -794,6 +848,7 @@ enum CloudKitConfig {
     static let tokenName = "syncTokenKey"
 }
 
+/// Simple public status used by the UI to display sync progress.
 enum SyncStatus: String {
     case idle = "Synced"
     case syncing = "Syncing..."
@@ -801,6 +856,7 @@ enum SyncStatus: String {
     case initialSyncing = "Initial syncing..."
 }
 
+/// Debug print helper gated by `#if DEBUG`.
 func logDebug(
     _ message: String,
     file: String = #file,
@@ -809,7 +865,6 @@ func logDebug(
 ) {
     #if DEBUG
     let filename = (file as NSString).lastPathComponent
-    //print("[JARNAEZ_DEBUG][\(filename):\(line)] \(function) - \(message)")
     print("[JARNAEZ_DEBUG][\(filename):\(line)] \(message)")
     #endif
 }

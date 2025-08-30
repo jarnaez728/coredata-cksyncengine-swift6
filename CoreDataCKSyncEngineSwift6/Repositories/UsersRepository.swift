@@ -9,6 +9,9 @@ import Foundation
 import CoreData
 import CloudKit
 
+/// Repository layer that encapsulates CRUD operations for `User` domain models
+/// backed by Core Data. It exposes async methods that marshal work onto the
+/// managed object context and maps to/from CloudKit when needed.
 final class UsersRepository: @unchecked Sendable {
     private let context: NSManagedObjectContext
     
@@ -17,6 +20,8 @@ final class UsersRepository: @unchecked Sendable {
     }
 
     // MARK: - Fetch all users
+    /// Returns all users stored in Core Data as domain models.
+    /// - Throws: Any error produced by the underlying Core Data fetch.
     func fetchAllUsers() async throws -> [User] {
         try await withCheckedThrowingContinuation { continuation in
             context.perform {
@@ -32,6 +37,9 @@ final class UsersRepository: @unchecked Sendable {
     }
 
     // MARK: - Add user
+    /// Inserts a new `User` into Core Data.
+    /// - Parameter user: The domain model to persist.
+    /// - Note: No-op if the provided name is empty.
     func addUser(_ user: User) async throws {
         try await context.perform {
             guard !user.name.isEmpty else {
@@ -44,6 +52,8 @@ final class UsersRepository: @unchecked Sendable {
     }
 
     // MARK: - Delete user
+    /// Deletes the user with the given identifier if it exists.
+    /// - Parameter id: The domain identifier (UUID).
     func deleteUser(withId id: UUID) async throws {
         try await context.perform {
             let request: NSFetchRequest<UserEntity> = UserEntity.fetchRequest()
@@ -56,6 +66,8 @@ final class UsersRepository: @unchecked Sendable {
     }
 
     // MARK: - Update user
+    /// Updates an existing user by matching on its identifier.
+    /// - Parameter user: The full domain model containing new values.
     func updateUser(_ user: User) async throws {
         try await context.perform {
             let request: NSFetchRequest<UserEntity> = UserEntity.fetchRequest()
@@ -68,8 +80,10 @@ final class UsersRepository: @unchecked Sendable {
     }
 }
 
-// MARK: - Mapping extension
+// MARK: - Core Data <-> CloudKit mapping
 extension UserEntity {
+    /// Initializes a `UserEntity` from a CloudKit record.
+    /// Returns `nil` when the record identifier is not a valid UUID.
     convenience init?(record: CKRecord, context: NSManagedObjectContext) {
         guard let uuid = UUID(uuidString: record.recordID.recordName) else {
             logDebug("❌ Invalid recordID for User: \(record.recordID.recordName)")
@@ -83,7 +97,9 @@ extension UserEntity {
         self.systemFields = archiver.encodedData
     }
     
-    // Pasar a CKRecord
+    // Convert to CKRecord
+    /// Converts this Core Data entity into a `CKRecord`, reusing `systemFields`
+    /// when available to preserve CloudKit metadata (change tags, creation info, etc.).
     func toCKRecord() -> CKRecord {
         precondition(self.id != nil, "id must exist before building CKRecord")
         let zoneID = CKRecordZone.ID(zoneName: CloudKitConfig.zoneName)
@@ -94,7 +110,7 @@ extension UserEntity {
                 let unarchiver = try NSKeyedUnarchiver(forReadingFrom: systemFields)
                 unarchiver.requiresSecureCoding = true
                 if let record = CKRecord(coder: unarchiver) {
-                    // Actualiza los campos modificados
+                    // Update modified fields
                     record["name"] = self.name
                     return record
                 }
@@ -108,6 +124,8 @@ extension UserEntity {
         record["name"] = self.name
         return record
     }
+    /// Maps the Core Data entity into the `User` domain model.
+    /// Returns `nil` if required fields are missing.
     func toDomainModel() -> User? {
         guard let id = self.id,
               let name = self.name else {
@@ -116,6 +134,7 @@ extension UserEntity {
         return User(id: id, name: name)
     }
 
+    /// Populates the Core Data entity from a `User` domain model.
     func fromDomainModel(_ user: User) {
         self.id = user.id
         self.name = user.name

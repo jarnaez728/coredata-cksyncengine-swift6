@@ -115,8 +115,8 @@ class AppInitialization: ObservableObject {
             let cloudUsers = try await usersVM.syncEngine.countRemoteRecordsInCloudKit(recordType: CloudKitConfig.userRecordType)
             let cloudSwimTimes = try await swimTimesVM.syncEngine.countRemoteRecordsInCloudKit(recordType: CloudKitConfig.swimTimeRecordType)
             
-            logDebug("[SYNC] Usuarios: Local \(localUsers) - iCloud \(cloudUsers)")
-            logDebug("[SYNC] SwimTimes: Local \(localSwimTimes) - iCloud \(cloudSwimTimes)")            
+            logDebug("[SYNC] Users: Local \(localUsers) - iCloud \(cloudUsers)")
+            logDebug("[SYNC] SwimTimes: Local \(localSwimTimes) - iCloud \(cloudSwimTimes)")
         } catch {
             logDebug("[SYNC][ERROR] Error comparing local/iCloud: \(error)")
         }

@@ -27,6 +27,10 @@ struct CoreDataCKSyncEngineSwift6App: App {
             InitialView(usersVM: usersVM, swimTimesVM: swimTimesVM)
                 .environmentObject(swimTimesVM)
                 .environmentObject(usersVM)
+                .task{
+                    usersVM.syncEngine.ensureZoneExists()
+                    await usersVM.syncEngine.printRemoteCloudKitRecords()
+                }
         }
     }
 }

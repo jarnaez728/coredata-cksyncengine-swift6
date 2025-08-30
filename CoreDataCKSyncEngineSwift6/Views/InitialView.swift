@@ -23,7 +23,7 @@ struct InitialView: View {
         Group {
             switch appInitializer.state {
             case .loading, .syncingCloud, .waitingForSync:
-                // Overlay de carga, puedes cambiar el aspecto
+                // Loading overlay, you can customize its appearance
                 ZStack {
                     Color(.systemBackground).ignoresSafeArea()
                     ProgressView( appInitializer.state == .loading ? "Loading data..." : "Syncing from iCloud...")
@@ -36,9 +36,9 @@ struct InitialView: View {
                 UserListView(selectedUser: $selectedUser)
             case .error(let msg):
                 VStack {
-                    Text("Error al iniciar: \(msg)")
+                    Text("Startup error: \(msg)")
                         .multilineTextAlignment(.center)
-                    Button("Reintentar") {
+                    Button("Retry") {
                         Task { await appInitializer.initialize() }
                     }
                     .padding(.top, 20)
@@ -47,7 +47,7 @@ struct InitialView: View {
             }
         }
         .task {
-            // Solo lanza una vez al entrar en pantalla
+            // Launch only once when entering the screen
             if appInitializer.state == .loading {
                 await appInitializer.initialize()
             }
