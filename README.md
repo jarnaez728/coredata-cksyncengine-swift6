@@ -9,13 +9,13 @@ The goal is to provide a clear reference implementation for others, highlighting
 - [Current Status](#-current-status)
 - [Technologies Used](#-technologies-used)
 - [Architecture](#-architecture)
+- [Inspiration & References](#-inspiration--references)
 - [Project Overview](#-project-overview)
 - [Repository Layout](#-repository-layout)
 - [Setup Instructions](#-setup-instructions)
 - [Testing & Behavior](#-testing--behavior)
 - [Long-Term Goal](#-long-term-goal)
 - [Contributing](#-contributing)
-- [Screenshots](#-screenshots)
 - [License](#-license)
 
 ---
@@ -60,6 +60,16 @@ Key points:
 - **Repositories**: Encapsulate Core Data CRUD operations.
 - **SyncEngine**: Manages CloudKit zones, sync tokens, conflict resolution, and debounced sends.
 - **System Fields**: Stored in Core Data entities to preserve CloudKit metadata (e.g. etags).
+
+---
+## 🍻 Inspiration & References
+
+This project builds on the excellent guide by Jordan Morgan:  
+[*"Syncing data with CloudKit in your iOS app using CKSyncEngine and Swift/SwiftUI"*](https://superwall.com/blog/syncing-data-with-cloudkit-in-your-ios-app-using-cksyncengine-and-swift-and-swiftui).  
+Many thanks for the great work and inspiration!
+
+In addition, I’ve learned from countless forum discussions, sought help from a freelance developer,  
+and of course relied on AI assistance — especially **ChatGPT-5** — to refine, debug, and document this demo project.
 
 ---
 
@@ -163,6 +173,7 @@ The project is functional, but there are several areas where the community can h
 4. Open a Pull Request 🚀
 
 Bug reports, feature requests, and discussions are also very valuable!  
+
 ---
 
 ## 📄 License
